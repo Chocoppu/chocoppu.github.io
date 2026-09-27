@@ -37,10 +37,10 @@
       <div class="field"><div class="label"><span>ポジション価値</span><span>USDT建て</span></div><div class="input-wrap"><input id="positionValue" type="number" inputmode="decimal" min="0" step="any" value=""><span class="suffix">USDT</span></div><div class="hint">推定必要証拠金: <strong id="marginHint">—</strong></div></div>
 
       <div class="field">
-        <div class="label"><span>手数料率</span><span>0〜1%</span></div>
-        <div class="value-box"><input id="feeInput" type="number" inputmode="decimal" min="0" max="1" step="0.01" value="0" aria-label="手数料率"><span class="unit">%</span></div>
-        <input id="feeRate" type="range" min="0" max="1" step="0.01" value="0">
-        <div class="range-labels"><span>0%</span><span>0.25%</span><span>0.50%</span><span>0.75%</span><span>1.00%</span></div>
+        <div class="label"><span>手数料率</span><span>0〜0.1%</span></div>
+        <div class="value-box"><input id="feeInput" type="number" inputmode="decimal" min="0" max="0.1" step="0.01" value="0" aria-label="手数料率"><span class="unit">%</span></div>
+        <input id="feeRate" type="range" min="0" max="0.1" step="0.01" value="0">
+        <div class="range-labels"><span>0%</span><span>0.02%</span><span>0.04%</span><span>0.06%</span><span>0.08%</span><span>0.10%</span></div>
       </div>
 
       <div class="buttons"><button class="reset" id="resetBtn">リセット</button><button class="calc" id="calcBtn">計算する</button></div>
@@ -50,9 +50,7 @@
       <div class="result-head"><h2>計算結果</h2><div class="pill">USDT</div></div>
       <div class="metric"><div class="k">損益</div><div class="v neutral" id="netPnl">—</div><div class="sub" id="jpyPnl">—</div></div>
       <div class="metric"><div class="k">ROI</div><div class="v neutral" id="roi">—</div></div>
-      <div class="metric"><div class="k">推定必要証拠金</div><div class="v" id="marginResult">—</div></div>
       <div class="metric"><div class="k">手数料</div><div class="v" id="fees">—</div></div>
-      <div class="divider"></div>
       <div class="formula">USDT建てリニア先物の簡易計算です。損益のJPY換算は 1 USDT = 158円 として計算します。</div>
       <div class="tiny">参考値です。資金調達料、スリッページ、維持証拠金、段階別手数料、清算条件などは含みません。</div>
     </aside>
@@ -69,7 +67,7 @@
     open:$('openPrice'),close:$('closePrice'),pos:$('positionValue'),
     fee:$('feeRate'),feeInput:$('feeInput'),
     marginHint:$('marginHint'),
-    net:$('netPnl'),jpy:$('jpyPnl'),roi:$('roi'),margin:$('marginResult'),fees:$('fees')
+    net:$('netPnl'),jpy:$('jpyPnl'),roi:$('roi'),fees:$('fees')
   };
   let side='long';
   const D={side:'long',leverage:10,open:'',close:'',pos:'',fee:0};
@@ -96,14 +94,9 @@
       feePct:n(e.feeInput.value)
     };
   }
-  function save(){
-    const v=vals();
-    localStorage.setItem('pnlCalcStateV3',JSON.stringify({
-      side,leverage:v.leverage,open:e.open.value,close:e.close.value,pos:e.pos.value,fee:e.feeInput.value
-    }));
-  }
+  function save(){}
   function clearResults(){
-    [e.net,e.jpy,e.roi,e.margin,e.fees].forEach(x=>x.textContent='—');
+    [e.net,e.jpy,e.roi,e.fees].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
   }
   function updateMarginHint(){
@@ -115,11 +108,12 @@
     updateMarginHint();
     clearResults();
   }
+  let hasCalculated=false;
   function setSide(s){
     side=s;
     e.long.classList.toggle('active',s==='long');
     e.short.classList.toggle('active',s==='short');
-    dirty();
+    if(hasCalculated) calc();
   }
   function setLev(v){
     v=Math.max(1,Math.min(1000,Math.round(Number(v)||1)));
@@ -139,7 +133,7 @@
     }
   }
   function setFee(v){
-    v=Math.max(0,Math.min(1,Math.round((Number(v)||0)*100)/100));
+    v=Math.max(0,Math.min(0.1,Math.round((Number(v)||0)*100)/100));
     e.fee.value=v;
     e.feeInput.value=v.toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
     dirty();
@@ -148,13 +142,13 @@
     const raw=e.feeInput.value;
     if(raw===''){clearResults();return}
     const v=Number(raw);
-    if(Number.isFinite(v)&&v>=0&&v<=1){
+    if(Number.isFinite(v)&&v>=0&&v<=0.1){
       e.fee.value=Math.round(v*100)/100;
       dirty();
     }
   }
   function valid(v){
-    return v.open>0&&v.close>0&&v.pos>0&&v.leverage>=1&&v.leverage<=1000&&v.feePct>=0&&v.feePct<=1;
+    return v.open>0&&v.close>0&&v.pos>0&&v.leverage>=1&&v.leverage<=1000&&v.feePct>=0&&v.feePct<=0.1;
   }
   function calc(){
     const v=vals();
@@ -168,35 +162,31 @@
     const totalFees=v.pos*feeRate+closeNotional*feeRate;
     const net=gross-totalFees;
     const margin=v.pos/v.leverage;
-    const roi=margin?(net/margin)*100:NaN;
+    const directionalReturn=side==='long'?(v.close-v.open)/v.open:(v.open-v.close)/v.open;
+    const grossRoi=directionalReturn*v.leverage*100;
+    const feeRoi=(totalFees/margin)*100;
+    const roi=grossRoi-feeRoi;
 
     e.net.textContent=`${fmt(net)} USDT`;
     e.jpy.textContent=`≈ ${fmtJpy(net*JPY_PER_USDT)}`;
     e.roi.textContent=fmtPct(roi);
-    e.margin.textContent=`${fmt(margin)} USDT`;
     e.fees.textContent=`${fmt(totalFees)} USDT`;
     signed(e.net,net);
     signed(e.roi,roi);
-    save();
+    hasCalculated=true;
   }
   function load(){
-    try{
-      const x=JSON.parse(localStorage.getItem('pnlCalcStateV3')||'null');
-      if(!x)return;
-      side=x.side==='short'?'short':'long';
-      e.open.value=x.open??D.open;
-      e.close.value=x.close??D.close;
-      e.pos.value=x.pos??D.pos;
-      const lev=Math.max(1,Math.min(1000,Number(x.leverage) || D.leverage));
-      e.lev.value=lev;
-      e.levInput.value=lev;
-      const fee=Math.max(0,Math.min(1,Number(x.fee) || 0));
-      e.fee.value=fee;
-      e.feeInput.value=fee;
-    }catch(_){}
+    side=D.side;
+    e.open.value=D.open;
+    e.close.value=D.close;
+    e.pos.value=D.pos;
+    e.lev.value=D.leverage;
+    e.levInput.value=D.leverage;
+    e.fee.value=D.fee;
+    e.feeInput.value=D.fee;
+    hasCalculated=false;
   }
   function reset(){
-    localStorage.removeItem('pnlCalcStateV3');
     side=D.side;
     e.open.value=D.open;e.close.value=D.close;e.pos.value=D.pos;
     e.lev.value=D.leverage;e.levInput.value=D.leverage;
@@ -204,6 +194,7 @@
     e.long.classList.add('active');e.short.classList.remove('active');
     document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===D.leverage));
     updateMarginHint();
+    hasCalculated=false;
     clearResults();
   }
 
