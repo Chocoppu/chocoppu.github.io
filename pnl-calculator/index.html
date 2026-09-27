@@ -58,7 +58,7 @@
   const fmtPct=v=>Number.isFinite(v)?`${v>0?'+':''}${v.toFixed(2)}%`:'—';
   function signed(el,v){el.classList.remove('positive','negative','neutral');el.classList.add(v>0?'positive':v<0?'negative':'neutral')}
   function vals(){return{leverage:n(e.lev.value),open:n(e.open.value),close:n(e.close.value),pos:n(e.pos.value),feePct:n(e.fee.value)}}
-  function save(){const v=vals();localStorage.setItem('pnlCalcStateV2',JSON.stringify({side,leverage:v.leverage,open:v.open,close:v.close,pos:v.pos,fee:v.feePct}))}
+  function save(){const v=vals();localStorage.setItem('pnlCalcStateV2',JSON.stringify({side,leverage:v.leverage,open:e.open.value,close:e.close.value,pos:e.pos.value,fee:e.fee.value}))}
   function setSide(s){side=s;e.long.classList.toggle('active',s==='long');e.short.classList.toggle('active',s==='short');save();calc()}
   function setLev(v){v=Math.max(1,Math.min(1000,Math.round(Number(v)||1)));e.lev.value=v;e.levText.textContent=v;document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===v));save();calc()}
   function validate(v){if(!(v.open>0))return'オープン価格は0より大きい値を入力してください。';if(!(v.close>0))return'決済価格は0より大きい値を入力してください。';if(!(v.pos>0))return'ポジション価値は0より大きい値を入力してください。';if(!(v.leverage>=1&&v.leverage<=1000))return'レバレッジは1〜1000倍で入力してください。';if(!(v.feePct>=0))return'手数料率は0以上で入力してください。';return''}
