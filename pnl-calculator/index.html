@@ -106,6 +106,7 @@
   function dirty(){
     save();
     updateMarginHint();
+    hasCalculated=false;
     clearResults();
   }
   let hasCalculated=false;
@@ -124,7 +125,7 @@
   }
   function syncLevInput(){
     const raw=e.levInput.value;
-    if(raw===''){clearResults();return}
+    if(raw===''){hasCalculated=false;clearResults();return}
     const v=Math.round(Number(raw));
     if(Number.isFinite(v)&&v>=1&&v<=1000){
       e.lev.value=v;
@@ -140,7 +141,7 @@
   }
   function syncFeeInput(){
     const raw=e.feeInput.value;
-    if(raw===''){clearResults();return}
+    if(raw===''){hasCalculated=false;clearResults();return}
     const v=Number(raw);
     if(Number.isFinite(v)&&v>=0&&v<=0.1){
       e.fee.value=Math.round(v*100)/100;
@@ -153,7 +154,7 @@
   function calc(){
     const v=vals();
     updateMarginHint();
-    if(!valid(v)){clearResults();return}
+    if(!valid(v)){hasCalculated=false;clearResults();return}
 
     const qty=v.pos/v.open;
     const gross=side==='long'?qty*(v.close-v.open):qty*(v.open-v.close);
