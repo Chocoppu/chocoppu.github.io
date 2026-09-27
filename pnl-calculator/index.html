@@ -69,17 +69,66 @@
     marginHint:$('marginHint'),
     net:$('netPnl'),jpy:$('jpyPnl'),roi:$('roi'),fees:$('fees'),feeJpy:$('feeJpy')
   };
+
   let side='long';
+  let hasCalculated=false;
   const D={side:'long',leverage:10,open:'',close:'',pos:'',fee:0};
-  const JPY_PER_USDT=158;
-  const n=v=>Number(String(v).replace(/,/g,''));
-  const fmt=(v,d=2)=>Number.isFinite(v)?v.toLocaleString('ja-JP',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
-  const fmtPct=v=>Number.isFinite(v)?`${v>0?'+':''}${v.toFixed(2)}%`:'—';
-  const fmtJpy=v=>{
-    if(!Number.isFinite(v))return'—';
-    const sign=v<0?'-¥':'¥';
-    return `${sign}${Math.abs(v).toLocaleString('ja-JP',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  };
+  const JPY_PER_USDT=158n;
+
+  // Arbitrary-precision decimal arithmetic using BigInt rational numbers.
+  // This avoids JavaScript Number precision loss for very large inputs.
+  const clean=s=>String(s).replace(/,/g,'').trim();
+
+  function dec(s){
+    const v=clean(s);
+    if(!/^\d+(?:\.\d+)?$/.test(v)) return null;
+    const parts=v.split('.');
+    const whole=parts[0]||'0';
+    const frac=parts[1]||'';
+    const digits=(whole+frac).replace(/^0+(?=\d)/,'')||'0';
+    return {n:BigInt(digits),d:10n**BigInt(frac.length)};
+  }
+  const rat=(n,d=1n)=>({n,d});
+  const add=(a,b)=>rat(a.n*b.d+b.n*a.d,a.d*b.d);
+  const sub=(a,b)=>rat(a.n*b.d-b.n*a.d,a.d*b.d);
+  const mul=(a,b)=>rat(a.n*b.n,a.d*b.d);
+  const div=(a,b)=>rat(a.n*b.d,a.d*b.n);
+  const mulInt=(a,k)=>rat(a.n*k,a.d);
+  const absRat=a=>rat(a.n<0n?-a.n:a.n,a.d);
+  const isPositive=a=>!!a&&a.d!==0n&&a.n>0n;
+
+  function ratFixed(a,places=2){
+    if(!a||a.d===0n) return '—';
+    const neg=a.n<0n;
+    const num=neg?-a.n:a.n;
+    const scale=10n**BigInt(places);
+    const scaled=num*scale;
+    let q=scaled/a.d;
+    const rem=scaled%a.d;
+    if(rem*2n>=a.d) q+=1n;
+
+    let s=q.toString();
+    if(places>0){
+      s=s.padStart(places+1,'0');
+      const i=s.slice(0,-places);
+      const f=s.slice(-places);
+      s=i.replace(/\B(?=(\d{3})+(?!\d))/g,',')+'.'+f;
+    }else{
+      s=s.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+    }
+    return (neg?'-':'')+s;
+  }
+
+  function fmtPct(a){
+    if(!a||a.d===0n) return '—';
+    return (a.n>0n?'+':'')+ratFixed(a,2)+'%';
+  }
+
+  function fmtJpy(a){
+    if(!a||a.d===0n) return '—';
+    const neg=a.n<0n;
+    return (neg?'-¥':'¥')+ratFixed(absRat(a),2);
+  }
 
   function formatGroupedInput(el){
     const oldValue=el.value;
@@ -113,41 +162,51 @@
     dirty();
   }
 
-  function signed(el,v){
+  function signedRat(el,v){
     el.classList.remove('positive','negative','neutral');
-    el.classList.add(v>0?'positive':v<0?'negative':'neutral');
+    el.classList.add(v&&v.n>0n?'positive':v&&v.n<0n?'negative':'neutral');
   }
+
   function vals(){
+    const levNum=Math.round(Number(e.levInput.value));
     return{
-      leverage:n(e.levInput.value),
-      open:n(e.open.value),
-      close:n(e.close.value),
-      pos:n(e.pos.value),
-      feePct:n(e.feeInput.value)
+      leverage:Number.isFinite(levNum)?BigInt(levNum):0n,
+      open:dec(e.open.value),
+      close:dec(e.close.value),
+      pos:dec(e.pos.value),
+      feePct:dec(e.feeInput.value)
     };
   }
-  function save(){}
+
   function clearResults(){
     [e.net,e.jpy,e.roi,e.fees,e.feeJpy].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
   }
+
   function updateMarginHint(){
-    const p=n(e.pos.value),l=n(e.levInput.value);
-    e.marginHint.textContent=(p>0&&l>0)?`${fmt(p/l)} USDT`:'—';
+    const p=dec(e.pos.value);
+    const lev=Math.round(Number(e.levInput.value));
+    if(isPositive(p)&&Number.isFinite(lev)&&lev>0){
+      const margin=div(p,rat(BigInt(lev)));
+      e.marginHint.textContent=`${ratFixed(margin,2)} USDT`;
+    }else{
+      e.marginHint.textContent='—';
+    }
   }
+
   function dirty(){
-    save();
     updateMarginHint();
     hasCalculated=false;
     clearResults();
   }
-  let hasCalculated=false;
+
   function setSide(s){
     side=s;
     e.long.classList.toggle('active',s==='long');
     e.short.classList.toggle('active',s==='short');
     if(hasCalculated) calc();
   }
+
   function setLev(v){
     v=Math.max(1,Math.min(1000,Math.round(Number(v)||1)));
     e.lev.value=v;
@@ -155,6 +214,7 @@
     document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===v));
     dirty();
   }
+
   function syncLevInput(){
     const raw=e.levInput.value;
     if(raw===''){hasCalculated=false;clearResults();return}
@@ -165,12 +225,14 @@
       dirty();
     }
   }
+
   function setFee(v){
     v=Math.max(0,Math.min(0.1,Math.round((Number(v)||0)*100)/100));
     e.fee.value=v;
     e.feeInput.value=v.toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
     dirty();
   }
+
   function syncFeeInput(){
     const raw=e.feeInput.value;
     if(raw===''){hasCalculated=false;clearResults();return}
@@ -180,31 +242,42 @@
       dirty();
     }
   }
+
   function valid(v){
-    return v.open>0&&v.close>0&&v.pos>0&&v.leverage>=1&&v.leverage<=1000&&v.feePct>=0&&v.feePct<=0.1;
+    return isPositive(v.open)&&isPositive(v.close)&&isPositive(v.pos)&&
+      v.leverage>=1n&&v.leverage<=1000n&&
+      v.feePct&&v.feePct.n>=0n&&v.feePct.n*10n<=v.feePct.d;
   }
+
   function calc(){
     const v=vals();
     updateMarginHint();
     if(!valid(v)){hasCalculated=false;clearResults();return}
 
-    const qty=v.pos/v.open;
-    const gross=side==='long'?qty*(v.close-v.open):qty*(v.open-v.close);
-    const closeNotional=qty*v.close;
-    const feeRate=v.feePct/100;
-    const totalFees=v.pos*feeRate+closeNotional*feeRate;
-    const margin=v.pos/v.leverage;
-    const roi=margin?(gross/margin)*100:NaN;
+    // Position value is entry notional in USDT.
+    // PnL = positionValue × directional price change / entryPrice.
+    const delta=side==='long'?sub(v.close,v.open):sub(v.open,v.close);
+    const gross=div(mul(v.pos,delta),v.open);
 
-    e.net.textContent=`${fmt(gross)} USDT`;
-    e.jpy.textContent=`≈ ${fmtJpy(gross*JPY_PER_USDT)}`;
+    // Fee is charged on entry notional and estimated exit notional.
+    const closeNotional=div(mul(v.pos,v.close),v.open);
+    const feeRate=div(v.feePct,rat(100n));
+    const totalFees=mul(add(v.pos,closeNotional),feeRate);
+
+    const margin=div(v.pos,rat(v.leverage));
+    const roi=mulInt(div(gross,margin),100n);
+
+    e.net.textContent=`${ratFixed(gross,2)} USDT`;
+    e.jpy.textContent=`≈ ${fmtJpy(mulInt(gross,JPY_PER_USDT))}`;
     e.roi.textContent=fmtPct(roi);
-    e.fees.textContent=`${fmt(totalFees)} USDT`;
-    e.feeJpy.textContent=`≈ ${fmtJpy(totalFees*JPY_PER_USDT)}`;
-    signed(e.net,gross);
-    signed(e.roi,roi);
+    e.fees.textContent=`${ratFixed(totalFees,2)} USDT`;
+    e.feeJpy.textContent=`≈ ${fmtJpy(mulInt(totalFees,JPY_PER_USDT))}`;
+
+    signedRat(e.net,gross);
+    signedRat(e.roi,roi);
     hasCalculated=true;
   }
+
   function load(){
     side=D.side;
     e.open.value=D.open;
@@ -216,22 +289,20 @@
     e.feeInput.value=D.fee;
     hasCalculated=false;
   }
+
   function reset(){
-    side=D.side;
-    e.open.value=D.open;e.close.value=D.close;e.pos.value=D.pos;
-    e.lev.value=D.leverage;e.levInput.value=D.leverage;
-    e.fee.value=D.fee;e.feeInput.value=D.fee;
-    e.long.classList.add('active');e.short.classList.remove('active');
+    load();
+    e.long.classList.add('active');
+    e.short.classList.remove('active');
     document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===D.leverage));
     updateMarginHint();
-    hasCalculated=false;
     clearResults();
   }
 
   e.long.addEventListener('click',()=>setSide('long'));
   e.short.addEventListener('click',()=>setSide('short'));
-  $('minusLev').addEventListener('click',()=>setLev(n(e.levInput.value)-1));
-  $('plusLev').addEventListener('click',()=>setLev(n(e.levInput.value)+1));
+  $('minusLev').addEventListener('click',()=>setLev(Number(e.levInput.value)-1));
+  $('plusLev').addEventListener('click',()=>setLev(Number(e.levInput.value)+1));
   e.lev.addEventListener('input',x=>setLev(x.target.value));
   e.levInput.addEventListener('input',syncLevInput);
   e.levInput.addEventListener('blur',()=>setLev(e.levInput.value||D.leverage));
