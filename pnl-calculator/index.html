@@ -121,13 +121,13 @@
 
   function fmtPct(a){
     if(!a||a.d===0n) return '—';
-    return (a.n>0n?'+':'')+ratFixed(a,2)+'%';
+    return (a.n>0n?'+':'')+ratFixed(a,0)+'%';
   }
 
   function fmtJpy(a){
     if(!a||a.d===0n) return '—';
     const neg=a.n<0n;
-    return (neg?'-¥':'¥')+ratFixed(absRat(a),2);
+    return (neg?'-¥':'¥')+ratFixed(absRat(a),0);
   }
 
   function formatGroupedInput(el){
@@ -267,10 +267,10 @@
     const margin=div(v.pos,rat(v.leverage));
     const roi=mulInt(div(gross,margin),100n);
 
-    e.net.textContent=`${ratFixed(gross,2)} USDT`;
+    e.net.textContent=`${ratFixed(gross,0)} USDT`;
     e.jpy.textContent=`≈ ${fmtJpy(mulInt(gross,JPY_PER_USDT))}`;
     e.roi.textContent=fmtPct(roi);
-    e.fees.textContent=`${ratFixed(totalFees,2)} USDT`;
+    e.fees.textContent=`${ratFixed(totalFees,0)} USDT`;
     e.feeJpy.textContent=`≈ ${fmtJpy(mulInt(totalFees,JPY_PER_USDT))}`;
 
     signedRat(e.net,gross);
