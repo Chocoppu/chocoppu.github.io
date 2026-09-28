@@ -72,6 +72,7 @@
 
   let side='long';
   let hasCalculated=false;
+  let lastCalculated=null;
   const D={side:'long',leverage:10,open:'',close:'',pos:'',fee:0};
   const JPY_PER_USDT=158n;
 
@@ -196,15 +197,13 @@
 
   function dirty(){
     updateMarginHint();
-    hasCalculated=false;
-    clearResults();
   }
 
   function setSide(s){
     side=s;
     e.long.classList.toggle('active',s==='long');
     e.short.classList.toggle('active',s==='short');
-    if(hasCalculated) calc();
+    if(hasCalculated&&lastCalculated) renderCalculation(lastCalculated);
   }
 
   function setLev(v){
@@ -217,7 +216,7 @@
 
   function syncLevInput(){
     const raw=e.levInput.value;
-    if(raw===''){hasCalculated=false;clearResults();return}
+    if(raw===''){return}
     const v=Math.round(Number(raw));
     if(Number.isFinite(v)&&v>=1&&v<=300){
       e.lev.value=v;
@@ -235,7 +234,7 @@
 
   function syncFeeInput(){
     const raw=e.feeInput.value;
-    if(raw===''){hasCalculated=false;clearResults();return}
+    if(raw===''){return}
     const v=Number(raw);
     if(Number.isFinite(v)&&v>=0&&v<=0.1){
       e.fee.value=Math.round(v*100)/100;
@@ -249,17 +248,10 @@
       v.feePct&&v.feePct.n>=0n&&v.feePct.n*10n<=v.feePct.d;
   }
 
-  function calc(){
-    const v=vals();
-    updateMarginHint();
-    if(!valid(v)){hasCalculated=false;clearResults();return}
-
-    // Position value is entry notional in USDT.
-    // PnL = positionValue × directional price change / entryPrice.
+  function renderCalculation(v){
     const delta=side==='long'?sub(v.close,v.open):sub(v.open,v.close);
     const gross=div(mul(v.pos,delta),v.open);
 
-    // Fee is charged on entry notional and estimated exit notional.
     const closeNotional=div(mul(v.pos,v.close),v.open);
     const feeRate=div(v.feePct,rat(100n));
     const totalFees=mul(add(v.pos,closeNotional),feeRate);
@@ -275,7 +267,16 @@
 
     signedRat(e.net,gross);
     signedRat(e.roi,roi);
+  }
+
+  function calc(){
+    const v=vals();
+    updateMarginHint();
+    if(!valid(v)) return;
+
+    lastCalculated=v;
     hasCalculated=true;
+    renderCalculation(lastCalculated);
   }
 
   function load(){
@@ -288,6 +289,7 @@
     e.fee.value=D.fee;
     e.feeInput.value=D.fee;
     hasCalculated=false;
+    lastCalculated=null;
   }
 
   function reset(){
