@@ -21,15 +21,15 @@
       </div>
 
       <div class="field">
-        <div class="label"><span>レバレッジ</span><span>1x〜300x</span></div>
+        <div class="label"><span>レバレッジ</span><span>1x〜200x</span></div>
         <div class="lev-top">
           <button class="step" id="minusLev">−</button>
-          <div class="value-box"><input id="leverageInput" type="number" inputmode="numeric" min="1" max="300" step="1" value="10" aria-label="レバレッジ"><span class="unit">X</span></div>
+          <div class="value-box"><input id="leverageInput" type="number" inputmode="numeric" min="1" max="200" step="1" value="10" aria-label="レバレッジ"><span class="unit">X</span></div>
           <button class="step" id="plusLev">＋</button>
         </div>
-        <div class="preset-row"><button data-lev="10" class="on">10x</button><button data-lev="50">50x</button><button data-lev="100">100x</button><button data-lev="300">300x</button></div>
-        <input id="leverage" type="range" min="1" max="300" step="1" value="10">
-        <div class="range-labels"><span>1x</span><span>50x</span><span>100x</span><span>150x</span><span>200x</span><span>250x</span><span>300x</span></div>
+        <div class="preset-row"><button data-lev="10" class="on">10x</button><button data-lev="50">50x</button><button data-lev="100">100x</button><button data-lev="200">200x</button></div>
+        <input id="leverage" type="range" min="1" max="200" step="1" value="10">
+        <div class="range-labels"><span>1x</span><span>25x</span><span>50x</span><span>100x</span><span>150x</span><span>175x</span><span>200x</span></div>
       </div>
 
       <div class="field"><div class="label"><span>オープン価格</span></div><div class="input-wrap"><input id="openPrice" class="grouped-input" type="text" inputmode="decimal" value=""><span class="suffix">USDT</span></div></div>
@@ -207,7 +207,7 @@
   }
 
   function setLev(v){
-    v=Math.max(1,Math.min(300,Math.round(Number(v)||1)));
+    v=Math.max(1,Math.min(200,Math.round(Number(v)||1)));
     e.lev.value=v;
     e.levInput.value=v;
     document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===v));
@@ -218,7 +218,7 @@
     const raw=e.levInput.value;
     if(raw===''){return}
     const v=Math.round(Number(raw));
-    if(Number.isFinite(v)&&v>=1&&v<=300){
+    if(Number.isFinite(v)&&v>=1&&v<=200){
       e.lev.value=v;
       document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===v));
       dirty();
@@ -244,7 +244,7 @@
 
   function valid(v){
     return isPositive(v.open)&&isPositive(v.close)&&isPositive(v.pos)&&
-      v.leverage>=1n&&v.leverage<=300n&&
+      v.leverage>=1n&&v.leverage<=200n&&
       v.feePct&&v.feePct.n>=0n&&v.feePct.n*10n<=v.feePct.d;
   }
 
