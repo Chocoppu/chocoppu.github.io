@@ -34,6 +34,23 @@
   .input-grid .fee-field .range-labels{font-size:.72rem}
   .input-grid .hint{font-size:.8rem}
 }
+
+/* Standalone four-function calculator inside the result card. */
+.result-card{display:flex;flex-direction:column}
+.fx-note{margin-top:11px;font-size:.76rem}
+.mini-calculator{margin-top:auto;padding-top:10px;min-width:0}
+.mini-calc-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-weight:800;font-size:.82rem;margin-bottom:5px}
+.mini-calc-expression{color:#737e8e;font-weight:500;font-size:.72rem;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini-calc-display{display:block;width:100%;height:35px;padding:5px 11px;margin:0 0 6px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--text);text-align:right;font-weight:800;font-size:1.1rem;font-variant-numeric:tabular-nums;outline:none}
+.mini-calc-display:focus{border-color:#4f7fff}
+.mini-calc-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:29px;gap:5px}
+.mini-calc-keys button{min-width:0;padding:0;border:1px solid #323843;border-radius:7px;background:#242832;color:#e8ecf2;font:700 .87rem system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;touch-action:manipulation}
+.mini-calc-keys button:active{background:#414b5c}
+.mini-calc-keys .calc-function{color:#b9c5d4;background:#2d333d}
+.mini-calc-keys .calc-operator{color:#b1caff;background:#293346}
+.mini-calc-keys .calc-equals{grid-row:span 2;background:var(--blue);border-color:var(--blue);color:#fff;font-size:1.2rem}
+.mini-calc-keys .calc-equals:active{background:#1c55ce}
+@media(max-width:820px){.mini-calculator{margin-top:15px}}
 </style>
 </head>
 <body>
@@ -79,8 +96,35 @@
       <div class="metric"><div class="k">損益</div><div class="v neutral" id="netPnl">—</div><div class="sub" id="jpyPnl">—</div></div>
       <div class="metric"><div class="k">ROI</div><div class="v neutral" id="roi">—</div></div>
       <div class="metric"><div class="k">手数料</div><div class="v" id="fees">—</div><div class="sub" id="feeJpy">—</div></div>
-      <div class="formula">USDT建てリニア先物の簡易計算です。損益のJPY換算は 1 USDT = 158円 として計算します。</div>
-      <div class="tiny">参考値です。資金調達料、スリッページ、維持証拠金、段階別手数料、清算条件などは含みません。</div>
+      <div class="formula fx-note">※ 1ドル＝158円として計算します。</div>
+      <section class="mini-calculator" aria-label="簡易電卓">
+        <div class="mini-calc-heading">
+          <span>電卓</span>
+          <span class="mini-calc-expression" id="miniCalcExpression" aria-hidden="true"></span>
+        </div>
+        <input id="miniCalcDisplay" class="mini-calc-display" type="text" value="0" readonly aria-label="電卓の表示。タップ後、キーボードでも操作できます">
+        <div class="mini-calc-keys" id="miniCalcKeys">
+          <button type="button" data-calc="clear" class="calc-function" aria-label="すべてクリア">AC</button>
+          <button type="button" data-calc="backspace" class="calc-function" aria-label="一文字消す">⌫</button>
+          <button type="button" data-calc="divide" class="calc-operator">÷</button>
+          <button type="button" data-calc="multiply" class="calc-operator">×</button>
+          <button type="button" data-calc="7">7</button>
+          <button type="button" data-calc="8">8</button>
+          <button type="button" data-calc="9">9</button>
+          <button type="button" data-calc="subtract" class="calc-operator">−</button>
+          <button type="button" data-calc="4">4</button>
+          <button type="button" data-calc="5">5</button>
+          <button type="button" data-calc="6">6</button>
+          <button type="button" data-calc="add" class="calc-operator">＋</button>
+          <button type="button" data-calc="1">1</button>
+          <button type="button" data-calc="2">2</button>
+          <button type="button" data-calc="3">3</button>
+          <button type="button" data-calc="equals" class="calc-equals">＝</button>
+          <button type="button" data-calc="sign" aria-label="プラスとマイナスを切り替え">±</button>
+          <button type="button" data-calc="0">0</button>
+          <button type="button" data-calc="decimal">.</button>
+        </div>
+      </section>
     </aside>
   </div>
 </div>
@@ -375,6 +419,143 @@
   document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===Number(e.levInput.value)));
   updateMarginHint();
   clearResults();
+})();
+</script>
+
+<script>
+(() => {
+  'use strict';
+
+  // This calculator is fully independent of the futures inputs and Reset button.
+  const display=document.getElementById('miniCalcDisplay');
+  const expression=document.getElementById('miniCalcExpression');
+  const keys=document.getElementById('miniCalcKeys');
+  const symbol={add:'＋',subtract:'−',multiply:'×',divide:'÷'};
+  const state={value:'0',left:null,operator:null,replaceNext:false};
+
+  function shown(value) {
+    if(value==='エラー') return value;
+    const neg=value.startsWith('-')?'-':'';
+    const text=neg?value.slice(1):value;
+    if(/e/i.test(text)) return value;
+    const parts=text.split('.');
+    const integer=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');
+    return neg+integer+(parts.length>1?'.'+parts[1]:'');
+  }
+
+  function render() {
+    display.value=shown(state.value);
+    display.scrollLeft=display.scrollWidth;
+    expression.textContent=state.operator&&state.left!==null
+      ? shown(String(state.left))+' '+symbol[state.operator]
+      : '';
+  }
+
+  function clear() {
+    state.value='0';
+    state.left=null;
+    state.operator=null;
+    state.replaceNext=false;
+    render();
+  }
+
+  function digit(char) {
+    if(state.value==='エラー') clear();
+    if(state.replaceNext){state.value='0';state.replaceNext=false;}
+    const count=state.value.replace(/[^0-9]/g,'').length;
+    if(count>=15) return;
+    state.value=state.value==='0'?char:state.value==='-0'?'-'+char:state.value+char;
+    render();
+  }
+
+  function decimal() {
+    if(state.value==='エラー') clear();
+    if(state.replaceNext){state.value='0';state.replaceNext=false;}
+    if(!state.value.includes('.')) state.value+='.';
+    render();
+  }
+
+  function backspace() {
+    if(state.value==='エラー'){clear();return;}
+    if(state.replaceNext){state.value='0';state.replaceNext=false;render();return;}
+    const value=state.value.slice(0,-1);
+    state.value=(!value||value==='-')?'0':value;
+    render();
+  }
+
+  function sign() {
+    if(state.value==='エラー') return;
+    if(Number(state.value)===0) return;
+    state.value=state.value.startsWith('-')?state.value.slice(1):'-'+state.value;
+    render();
+  }
+
+  function compute(a,op,b) {
+    let result;
+    if(op==='add') result=a+b;
+    else if(op==='subtract') result=a-b;
+    else if(op==='multiply') result=a*b;
+    else if(op==='divide') result=b===0?NaN:a/b;
+    if(!Number.isFinite(result)) return null;
+    // Remove floating-point artifacts such as 0.30000000000000004.
+    return Number(result.toPrecision(12)).toString();
+  }
+
+  function operate(op) {
+    if(state.value==='エラー') return;
+    const current=Number(state.value);
+    if(state.operator&&!state.replaceNext){
+      const result=compute(state.left,state.operator,current);
+      if(result===null){
+        state.value='エラー';state.left=null;state.operator=null;state.replaceNext=true;render();return;
+      }
+      state.value=result;
+    }
+    state.left=Number(state.value);
+    state.operator=op;
+    state.replaceNext=true;
+    render();
+  }
+
+  function equals() {
+    if(!state.operator||state.replaceNext) return;
+    const result=compute(state.left,state.operator,Number(state.value));
+    state.value=result===null?'エラー':result;
+    state.left=null;
+    state.operator=null;
+    state.replaceNext=true;
+    render();
+  }
+
+  function handle(action) {
+    if(/^[0-9]$/.test(action)) digit(action);
+    else if(action==='decimal') decimal();
+    else if(action==='clear') clear();
+    else if(action==='backspace') backspace();
+    else if(action==='sign') sign();
+    else if(action==='equals') equals();
+    else if(symbol[action]) operate(action);
+  }
+
+  keys.addEventListener('click',e=>{
+    const button=e.target.closest('button[data-calc]');
+    if(!button||!keys.contains(button)) return;
+    handle(button.dataset.calc);
+  });
+
+  display.addEventListener('keydown',e=>{
+    const operators={'+':'add','-':'subtract','*':'multiply','/':'divide','x':'multiply','X':'multiply'};
+    let action=null;
+    if(/^[0-9]$/.test(e.key)) action=e.key;
+    else if(e.key==='.') action='decimal';
+    else if(e.key==='Enter'||e.key==='=') action='equals';
+    else if(e.key==='Backspace') action='backspace';
+    else if(e.key==='Escape'||e.key==='Delete') action='clear';
+    else if(operators[e.key]) action=operators[e.key];
+    if(action){e.preventDefault();handle(action);}
+  });
+
+  render();
 })();
 </script>
 </body>
