@@ -362,6 +362,8 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 
   let pnlCountFrame=0;
   let pnlFinishTimer=0;
+  let displayedPnl=0n;
+  let pnlHasPreviousResult=false;
 
   function stopPnlCount(){
     if(pnlCountFrame) cancelAnimationFrame(pnlCountFrame);
@@ -370,30 +372,36 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     pnlFinishTimer=0;
   }
 
-  // Animate the visible rounded USDT amount only. Exact BigInt calculations
-  // and all other financial results remain untouched.
+  // Count from the amount currently displayed to the new rounded result.
+  // Financial calculations remain exact and independent of this animation.
   function animatePnlAmount(gross){
     stopPnlCount();
-    const finalText=`${ratFixed(gross,0)} USDT`;
     const rounded=BigInt(ratFixed(gross,0).replace(/,/g,''));
-    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches || rounded===0n){
+    const finalText=`${rounded.toLocaleString('en-US')} USDT`;
+    const from=pnlHasPreviousResult?displayedPnl:0n;
+    pnlHasPreviousResult=true;
+
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches || from===rounded){
+      displayedPnl=rounded;
       e.net.textContent=finalText;
       return;
     }
 
-    const duration=gross.n>0n?1250:1000;
+    const duration=gross.n>0n?750:500;
+    const difference=rounded-from;
     let started=null;
     const tick=timestamp=>{
       if(started===null) started=timestamp;
       const t=Math.min(1,(timestamp-started)/duration);
       const eased=1-Math.pow(1-t,3);
       const million=BigInt(Math.round(eased*1000000));
-      const value=rounded*million/1000000n;
-      e.net.textContent=`${value.toLocaleString('en-US')} USDT`;
+      displayedPnl=from+difference*million/1000000n;
+      e.net.textContent=`${displayedPnl.toLocaleString('en-US')} USDT`;
       if(t<1){
         pnlCountFrame=requestAnimationFrame(tick);
       }else{
         pnlCountFrame=0;
+        displayedPnl=rounded;
         e.net.textContent=finalText;
         if(gross.n>0n){
           e.net.classList.remove('pnl-profit-bloom');
@@ -403,7 +411,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
         }
       }
     };
-    e.net.textContent='0 USDT';
+    e.net.textContent=`${from.toLocaleString('en-US')} USDT`;
     pnlCountFrame=requestAnimationFrame(tick);
   }
 
@@ -426,6 +434,8 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 
   function clearResults(){
     stopPnlCount();
+    displayedPnl=0n;
+    pnlHasPreviousResult=false;
     clearProfitEmphasis();
     [e.net,e.jpy,e.roi,e.fees,e.feeJpy].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
