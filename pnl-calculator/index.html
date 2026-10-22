@@ -115,8 +115,11 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 :root[data-theme="light"] .mini-calc-keys .calc-equals{background:var(--blue);border-color:var(--blue);color:#ffffff}
 :root[data-theme="light"] .mini-calc-keys .calc-equals:active{background:#1c55ce}
 
-/* Main PnL is the only animated monetary result. Original rest of UI is unchanged. */
-#netPnl.pnl-profit{position:relative;display:inline-block;justify-self:end;max-width:100%;line-height:1.28;transform-origin:right center;overflow-wrap:anywhere;isolation:isolate}
+/* PnL: preserve the current visual state, smoothly transitioning between tiers. */
+#netPnl.pnl-profit{
+  display:inline-block;justify-self:end;max-width:100%;line-height:1.28;
+  overflow-wrap:anywhere;transition:font-size .22s ease,filter .22s ease;
+}
 #netPnl.pnl-profit-1{font-size:1.16rem}
 #netPnl.pnl-profit-2{font-size:1.34rem}
 #netPnl.pnl-profit-3{font-size:1.52rem}
@@ -124,30 +127,11 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 #netPnl.pnl-profit-2{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--green) 38%,transparent))}
 #netPnl.pnl-profit-3{filter:drop-shadow(0 0 11px color-mix(in srgb,var(--green) 55%,transparent))}
 #netPnl.pnl-profit-4{filter:drop-shadow(0 0 15px color-mix(in srgb,var(--green) 72%,transparent))}
-#netPnl.pnl-profit-bloom{animation:pnl-profit-celebrate 1.25s cubic-bezier(.22,.75,.3,1) both}
-#netPnl.pnl-profit-bloom.pnl-profit-1{animation-duration:.9s}
-#netPnl.pnl-profit-bloom.pnl-profit-4{animation-duration:1.5s}
-@keyframes pnl-profit-celebrate{
-  0%{opacity:.5;transform:translateY(9px) scale(.84);filter:drop-shadow(0 0 0 transparent)}
-  35%{opacity:1;transform:translateY(0) scale(1.055)}
-  70%{transform:scale(1.11);filter:drop-shadow(0 0 19px color-mix(in srgb,var(--green) 80%,transparent))}
-  85%{transform:scale(.98)}
-  100%{opacity:1;transform:scale(1)}
-}
-#netPnl.pnl-profit-finish{animation:pnl-profit-finish .55s ease-out both}
-@keyframes pnl-profit-finish{
-  0%{transform:scale(1)}
-  36%{transform:scale(1.16);text-shadow:0 0 20px color-mix(in srgb,var(--green) 78%,transparent)}
-  68%{transform:scale(.975)}
-  100%{transform:scale(1)}
-}
 @media(max-width:520px){
   #netPnl.pnl-profit-3{font-size:1.32rem}
   #netPnl.pnl-profit-4{font-size:1.44rem}
 }
-@media(prefers-reduced-motion:reduce){
-  #netPnl.pnl-profit-bloom,#netPnl.pnl-profit-finish{animation:none}
-}
+@media(prefers-reduced-motion:reduce){#netPnl.pnl-profit{transition:none}}
 
 </style>
 </head>
@@ -361,83 +345,63 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
   }
 
   let pnlCountFrame=0;
-  let pnlFinishTimer=0;
   let displayedPnl=0n;
   let previousProfitTier=0;
 
   function stopPnlCount(){
     if(pnlCountFrame) cancelAnimationFrame(pnlCountFrame);
     pnlCountFrame=0;
-    if(pnlFinishTimer) clearTimeout(pnlFinishTimer);
-    pnlFinishTimer=0;
   }
 
-  function profitTier(gross){
-    if(!gross || gross.n<=0n) return 0;
-    return gross.n>=10000n*gross.d?4:
-      gross.n>=1000n*gross.d?3:
-      gross.n>=100n*gross.d?2:1;
+  function profitTier(value){
+    if(value<=0n) return 0;
+    return value>=10000n?4:value>=1000n?3:value>=100n?2:1;
   }
 
   function clearProfitEmphasis(){
-    e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4','pnl-profit-bloom','pnl-profit-finish');
+    e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4');
   }
 
-  // Always interpolate changing amounts, including losses and zero.
-  // Decorative animation runs only when the profit tier changes.
-  function updatePnlDisplay(gross){
-    const tier=profitTier(gross);
-    const rounded=BigInt(ratFixed(gross,0).replace(/,/g,''));
-    const from=displayedPnl;
-    const changedTier=tier!==previousProfitTier;
-    const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    stopPnlCount();
-    if(changedTier){
-      clearProfitEmphasis();
+  function renderPnlFrame(value){
+    displayedPnl=value;
+    e.net.textContent=`${value.toLocaleString('en-US')} USDT`;
+    // Determine the visual tier from the value visible in THIS frame,
+    // never from the target of the next calculation.
+    const tier=profitTier(value);
+    if(tier!==previousProfitTier){
+      e.net.classList.remove('pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4');
       if(tier>0){
         e.net.classList.add('pnl-profit',`pnl-profit-${tier}`);
-        if(!reducedMotion) e.net.classList.add('pnl-profit-bloom');
+      }else{
+        e.net.classList.remove('pnl-profit');
       }
+      previousProfitTier=tier;
     }
-    previousProfitTier=tier;
+  }
 
-    const show=value=>{
-      displayedPnl=value;
-      e.net.textContent=`${value.toLocaleString('en-US')} USDT`;
-    };
-
-    // Numeric interpolation is independent of profit-tier decoration.
-    // Only an unchanged amount (or reduced-motion preference) skips counting.
-    if(reducedMotion || from===rounded){
-      show(rounded);
+  // The next calculation always starts at the EXACT current displayed integer.
+  // All amounts (including 0 and negatives) interpolate in 0.75 seconds.
+  function updatePnlDisplay(gross){
+    stopPnlCount();
+    const rounded=BigInt(ratFixed(gross,0).replace(/,/g,''));
+    const from=displayedPnl;
+    if(from===rounded || window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      renderPnlFrame(rounded);
       return;
     }
-
-    // Keep the previous figure on screen until the first animation frame.
-    // The value itself is NEVER reset to zero or an older result.
-    const duration=750;
     const distance=rounded-from;
+    const duration=750;
     let startTime=null;
     const tick=now=>{
       if(startTime===null) startTime=now;
       const t=Math.min(1,(now-startTime)/duration);
       const eased=1-Math.pow(1-t,3);
       const fraction=BigInt(Math.round(eased*1000000));
-      show(from+distance*fraction/1000000n);
+      renderPnlFrame(t===1?rounded:from+distance*fraction/1000000n);
       if(t<1){
         pnlCountFrame=requestAnimationFrame(tick);
       }else{
         pnlCountFrame=0;
-        show(rounded);
-        if(changedTier && tier>0 && !reducedMotion){
-          e.net.classList.remove('pnl-profit-bloom');
-          e.net.classList.add('pnl-profit-finish');
-          pnlFinishTimer=setTimeout(()=>{
-            e.net.classList.remove('pnl-profit-finish');
-            pnlFinishTimer=0;
-          },560);
-        }
       }
     };
     pnlCountFrame=requestAnimationFrame(tick);
