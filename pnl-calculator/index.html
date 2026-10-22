@@ -115,17 +115,40 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 :root[data-theme="light"] .mini-calc-keys .calc-equals{background:var(--blue);border-color:var(--blue);color:#ffffff}
 :root[data-theme="light"] .mini-calc-keys .calc-equals:active{background:#1c55ce}
 
-/* Profit-only emphasis for the main USDT PnL. Loss, zero and other results remain unchanged. */
-#netPnl.pnl-profit{display:inline-block;justify-self:end;max-width:100%;line-height:1.25;transform-origin:right center;transition:font-size .24s ease,text-shadow .24s ease;overflow-wrap:anywhere}
-#netPnl.pnl-profit-1{font-size:1.08rem}
-#netPnl.pnl-profit-2{font-size:1.16rem}
-#netPnl.pnl-profit-3{font-size:1.25rem}
-#netPnl.pnl-profit-4{font-size:1.34rem}
-#netPnl.pnl-profit-2,#netPnl.pnl-profit-3,#netPnl.pnl-profit-4{text-shadow:0 0 14px color-mix(in srgb,var(--green) 13%,transparent)}
-#netPnl.pnl-profit-4{text-shadow:0 0 17px color-mix(in srgb,var(--green) 23%,transparent)}
-#netPnl.pnl-profit-bloom{animation:pnl-profit-appear .52s cubic-bezier(.18,.72,.3,1) both}
-@keyframes pnl-profit-appear{0%{opacity:.74;transform:scale(.95)}58%{opacity:1;transform:scale(1.035)}100%{opacity:1;transform:scale(1)}}
-@media(prefers-reduced-motion:reduce){#netPnl.pnl-profit-bloom{animation:none}#netPnl.pnl-profit{transition:none}}
+/* Main PnL is the only animated monetary result. Original rest of UI is unchanged. */
+#netPnl.pnl-profit{position:relative;display:inline-block;justify-self:end;max-width:100%;line-height:1.28;transform-origin:right center;overflow-wrap:anywhere;isolation:isolate}
+#netPnl.pnl-profit-1{font-size:1.16rem}
+#netPnl.pnl-profit-2{font-size:1.34rem}
+#netPnl.pnl-profit-3{font-size:1.52rem}
+#netPnl.pnl-profit-4{font-size:1.72rem}
+#netPnl.pnl-profit-2{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--green) 38%,transparent))}
+#netPnl.pnl-profit-3{filter:drop-shadow(0 0 11px color-mix(in srgb,var(--green) 55%,transparent))}
+#netPnl.pnl-profit-4{filter:drop-shadow(0 0 15px color-mix(in srgb,var(--green) 72%,transparent))}
+#netPnl.pnl-profit-bloom{animation:pnl-profit-celebrate 1.25s cubic-bezier(.22,.75,.3,1) both}
+#netPnl.pnl-profit-bloom.pnl-profit-1{animation-duration:.9s}
+#netPnl.pnl-profit-bloom.pnl-profit-4{animation-duration:1.5s}
+@keyframes pnl-profit-celebrate{
+  0%{opacity:.5;transform:translateY(9px) scale(.84);filter:drop-shadow(0 0 0 transparent)}
+  35%{opacity:1;transform:translateY(0) scale(1.055)}
+  70%{transform:scale(1.11);filter:drop-shadow(0 0 19px color-mix(in srgb,var(--green) 80%,transparent))}
+  85%{transform:scale(.98)}
+  100%{opacity:1;transform:scale(1)}
+}
+#netPnl.pnl-profit-finish{animation:pnl-profit-finish .55s ease-out both}
+@keyframes pnl-profit-finish{
+  0%{transform:scale(1)}
+  36%{transform:scale(1.16);text-shadow:0 0 20px color-mix(in srgb,var(--green) 78%,transparent)}
+  68%{transform:scale(.975)}
+  100%{transform:scale(1)}
+}
+@media(max-width:520px){
+  #netPnl.pnl-profit-3{font-size:1.32rem}
+  #netPnl.pnl-profit-4{font-size:1.44rem}
+}
+@media(prefers-reduced-motion:reduce){
+  #netPnl.pnl-profit-bloom,#netPnl.pnl-profit-finish{animation:none}
+}
+
 </style>
 </head>
 <body>
@@ -337,8 +360,55 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     };
   }
 
+  let pnlCountFrame=0;
+  let pnlFinishTimer=0;
+
+  function stopPnlCount(){
+    if(pnlCountFrame) cancelAnimationFrame(pnlCountFrame);
+    pnlCountFrame=0;
+    if(pnlFinishTimer) clearTimeout(pnlFinishTimer);
+    pnlFinishTimer=0;
+  }
+
+  // Animate the visible rounded USDT amount only. Exact BigInt calculations
+  // and all other financial results remain untouched.
+  function animatePnlAmount(gross){
+    stopPnlCount();
+    const finalText=`${ratFixed(gross,0)} USDT`;
+    const rounded=BigInt(ratFixed(gross,0).replace(/,/g,''));
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches || rounded===0n){
+      e.net.textContent=finalText;
+      return;
+    }
+
+    const duration=gross.n>0n?1250:1000;
+    let started=null;
+    const tick=timestamp=>{
+      if(started===null) started=timestamp;
+      const t=Math.min(1,(timestamp-started)/duration);
+      const eased=1-Math.pow(1-t,3);
+      const million=BigInt(Math.round(eased*1000000));
+      const value=rounded*million/1000000n;
+      e.net.textContent=`${value.toLocaleString('en-US')} USDT`;
+      if(t<1){
+        pnlCountFrame=requestAnimationFrame(tick);
+      }else{
+        pnlCountFrame=0;
+        e.net.textContent=finalText;
+        if(gross.n>0n){
+          e.net.classList.remove('pnl-profit-bloom');
+          void e.net.offsetWidth;
+          e.net.classList.add('pnl-profit-finish');
+          pnlFinishTimer=setTimeout(()=>e.net.classList.remove('pnl-profit-finish'),560);
+        }
+      }
+    };
+    e.net.textContent='0 USDT';
+    pnlCountFrame=requestAnimationFrame(tick);
+  }
+
   function clearProfitEmphasis(){
-    e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4','pnl-profit-bloom');
+    e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4','pnl-profit-bloom','pnl-profit-finish');
   }
 
   function applyProfitEmphasis(gross){
@@ -349,12 +419,13 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
       gross.n>=1000n*gross.d?3:
       gross.n>=100n*gross.d?2:1;
     e.net.classList.add('pnl-profit',`pnl-profit-${level}`);
-    // Restart the gentle positive-only effect when Calculate is pressed.
+    // Restart the stronger profit-only effect when Calculate is pressed.
     void e.net.offsetWidth;
     e.net.classList.add('pnl-profit-bloom');
   }
 
   function clearResults(){
+    stopPnlCount();
     clearProfitEmphasis();
     [e.net,e.jpy,e.roi,e.fees,e.feeJpy].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
@@ -455,7 +526,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     const margin=div(v.pos,rat(v.leverage));
     const roi=mulInt(div(gross,margin),100n);
 
-    e.net.textContent=`${ratFixed(gross,0)} USDT`;
+    animatePnlAmount(gross);
     e.jpy.textContent=`≈ ${fmtJpy(mulInt(gross,JPY_PER_USDT))}`;
     e.roi.textContent=fmtPct(roi);
     e.fees.textContent=`${ratFixed(totalFees,0)} USDT`;
