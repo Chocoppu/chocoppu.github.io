@@ -114,6 +114,18 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 :root[data-theme="light"] .mini-calc-keys .calc-operator{background:#e1eafa;color:#235cab}
 :root[data-theme="light"] .mini-calc-keys .calc-equals{background:var(--blue);border-color:var(--blue);color:#ffffff}
 :root[data-theme="light"] .mini-calc-keys .calc-equals:active{background:#1c55ce}
+
+/* Profit-only emphasis for the main USDT PnL. Loss, zero and other results remain unchanged. */
+#netPnl.pnl-profit{display:inline-block;justify-self:end;max-width:100%;line-height:1.25;transform-origin:right center;transition:font-size .24s ease,text-shadow .24s ease;overflow-wrap:anywhere}
+#netPnl.pnl-profit-1{font-size:1.08rem}
+#netPnl.pnl-profit-2{font-size:1.16rem}
+#netPnl.pnl-profit-3{font-size:1.25rem}
+#netPnl.pnl-profit-4{font-size:1.34rem}
+#netPnl.pnl-profit-2,#netPnl.pnl-profit-3,#netPnl.pnl-profit-4{text-shadow:0 0 14px color-mix(in srgb,var(--green) 13%,transparent)}
+#netPnl.pnl-profit-4{text-shadow:0 0 17px color-mix(in srgb,var(--green) 23%,transparent)}
+#netPnl.pnl-profit-bloom{animation:pnl-profit-appear .52s cubic-bezier(.18,.72,.3,1) both}
+@keyframes pnl-profit-appear{0%{opacity:.74;transform:scale(.95)}58%{opacity:1;transform:scale(1.035)}100%{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){#netPnl.pnl-profit-bloom{animation:none}#netPnl.pnl-profit{transition:none}}
 </style>
 </head>
 <body>
@@ -325,7 +337,25 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     };
   }
 
+  function clearProfitEmphasis(){
+    e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4','pnl-profit-bloom');
+  }
+
+  function applyProfitEmphasis(gross){
+    clearProfitEmphasis();
+    if(!gross || gross.n<=0n) return;
+    // Thresholds are in USDT and use the existing exact rational representation.
+    const level=gross.n>=10000n*gross.d?4:
+      gross.n>=1000n*gross.d?3:
+      gross.n>=100n*gross.d?2:1;
+    e.net.classList.add('pnl-profit',`pnl-profit-${level}`);
+    // Restart the gentle positive-only effect when Calculate is pressed.
+    void e.net.offsetWidth;
+    e.net.classList.add('pnl-profit-bloom');
+  }
+
   function clearResults(){
+    clearProfitEmphasis();
     [e.net,e.jpy,e.roi,e.fees,e.feeJpy].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
   }
@@ -432,6 +462,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     e.feeJpy.textContent=`≈ ${fmtJpy(mulInt(totalFees,JPY_PER_USDT))}`;
 
     signedRat(e.net,gross);
+    applyProfitEmphasis(gross);
     signedRat(e.roi,roi);
   }
 
