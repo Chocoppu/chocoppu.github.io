@@ -383,9 +383,8 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     e.net.classList.remove('pnl-profit','pnl-profit-1','pnl-profit-2','pnl-profit-3','pnl-profit-4','pnl-profit-bloom','pnl-profit-finish');
   }
 
-  // Same profit tier: no visual animation, even when the amount changes.
-  // Different tier: count directly from the number currently visible.
-  // Loss/zero: update immediately without the old 0.5-second animation.
+  // Always interpolate changing amounts, including losses and zero.
+  // Decorative animation runs only when the profit tier changes.
   function updatePnlDisplay(gross){
     const tier=profitTier(gross);
     const rounded=BigInt(ratFixed(gross,0).replace(/,/g,''));
@@ -408,7 +407,9 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
       e.net.textContent=`${value.toLocaleString('en-US')} USDT`;
     };
 
-    if(!changedTier || tier===0 || reducedMotion || from===rounded){
+    // Numeric interpolation is independent of profit-tier decoration.
+    // Only an unchanged amount (or reduced-motion preference) skips counting.
+    if(reducedMotion || from===rounded){
       show(rounded);
       return;
     }
@@ -429,12 +430,14 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
       }else{
         pnlCountFrame=0;
         show(rounded);
-        e.net.classList.remove('pnl-profit-bloom');
-        e.net.classList.add('pnl-profit-finish');
-        pnlFinishTimer=setTimeout(()=>{
-          e.net.classList.remove('pnl-profit-finish');
-          pnlFinishTimer=0;
-        },560);
+        if(changedTier && tier>0 && !reducedMotion){
+          e.net.classList.remove('pnl-profit-bloom');
+          e.net.classList.add('pnl-profit-finish');
+          pnlFinishTimer=setTimeout(()=>{
+            e.net.classList.remove('pnl-profit-finish');
+            pnlFinishTimer=0;
+          },560);
+        }
       }
     };
     pnlCountFrame=requestAnimationFrame(tick);
