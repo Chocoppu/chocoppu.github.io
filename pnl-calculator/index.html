@@ -188,7 +188,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
       <div class="metric"><div class="k">損益</div><div class="v neutral" id="netPnl">—</div><div class="sub" id="jpyPnl">—</div></div>
       <div class="metric"><div class="k">ROI</div><div class="v neutral" id="roi">—</div></div>
       <div class="metric"><div class="k">手数料</div><div class="v" id="fees">—</div><div class="sub" id="feeJpy">—</div></div>
-      <div class="formula fx-note">※ 1ドル＝158円として計算します。</div>
+      <div class="formula fx-note">※ 1ドル＝157円として計算します。</div>
       <section class="mini-calculator" aria-label="簡易電卓">
         <div class="mini-calc-heading">
           <span>電卓</span>
@@ -239,7 +239,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
   let hasCalculated=false;
   let lastCalculated=null;
   const D={side:'long',leverage:10,open:'',close:'',pos:'',fee:0};
-  const JPY_PER_USDT=158n;
+  const JPY_PER_USDT=157n;
 
   // Arbitrary-precision decimal arithmetic using BigInt rational numbers.
   // This avoids JavaScript Number precision loss for very large inputs.
