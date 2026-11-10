@@ -188,7 +188,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
       <div class="metric"><div class="k">損益</div><div class="v neutral" id="netPnl">—</div><div class="sub" id="jpyPnl">—</div></div>
       <div class="metric"><div class="k">ROI</div><div class="v neutral" id="roi">—</div></div>
       <div class="metric"><div class="k">手数料</div><div class="v" id="fees">—</div><div class="sub" id="feeJpy">—</div></div>
-      <div class="formula fx-note">※ 1ドル＝157円として計算します。</div>
+      <div class="formula fx-note" title="USD/JPYの参考レートで換算します。リアルタイム相場ではありません。1 USDT≒1 USDとして計算します。">※ 1ドル＝<span id="fxRateDisplay">157</span>円として計算します。<span id="fxRateStatus">（暫定値・取得中）</span></div>
       <section class="mini-calculator" aria-label="簡易電卓">
         <div class="mini-calc-heading">
           <span>電卓</span>
@@ -239,7 +239,16 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
   let hasCalculated=false;
   let lastCalculated=null;
   const D={side:'long',leverage:10,open:'',close:'',pos:'',fee:0};
-  const JPY_PER_USDT=157n;
+  // The fallback rate is used only when no fetched or saved rate exists.
+  const FX_CACHE_KEY='pnl-calculator-usdjpy-v1';
+  let fxRate={n:157n,d:1n};
+  let fxRateText='157';
+  let fxRateDate='';
+  let fxRateOrigin='fallback';
+  let fxRateStatus='loading';
+  let lastCurrencyAmounts=null;
+  let fxFetching=false;
+  let fxNextFetchAt=0;
 
   // Arbitrary-precision decimal arithmetic using BigInt rational numbers.
   // This avoids JavaScript Number precision loss for very large inputs.
@@ -412,6 +421,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     displayedPnl=0n;
     previousProfitTier=0;
     clearProfitEmphasis();
+    lastCurrencyAmounts=null;
     [e.net,e.jpy,e.roi,e.fees,e.feeJpy].forEach(x=>x.textContent='—');
     [e.net,e.roi].forEach(x=>{x.classList.remove('positive','negative');x.classList.add('neutral')});
   }
@@ -512,13 +522,111 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
     const roi=mulInt(div(gross,margin),100n);
 
     updatePnlDisplay(gross);
-    e.jpy.textContent=`≈ ${fmtJpy(mulInt(gross,JPY_PER_USDT))}`;
     e.roi.textContent=fmtPct(roi);
     e.fees.textContent=`${ratFixed(totalFees,0)} USDT`;
-    e.feeJpy.textContent=`≈ ${fmtJpy(mulInt(totalFees,JPY_PER_USDT))}`;
+    // Remember the exact values from the last confirmed calculation.
+    // An exchange-rate update must not use subsequent, unsubmitted edits.
+    lastCurrencyAmounts={gross,totalFees};
+    updateYenDisplays();
 
     signedRat(e.net,gross);
     signedRat(e.roi,roi);
+  }
+
+
+  // Use the same reference exchange rate for both yen amounts.
+  function updateYenDisplays(){
+    if(!lastCurrencyAmounts) return;
+    e.jpy.textContent=`≈ ${fmtJpy(mul(lastCurrencyAmounts.gross,fxRate))}`;
+    e.feeJpy.textContent=`≈ ${fmtJpy(mul(lastCurrencyAmounts.totalFees,fxRate))}`;
+  }
+
+  function renderFxNote(){
+    $('fxRateDisplay').textContent=fxRateText;
+    let label;
+    if(fxRateOrigin==='fallback'){
+      label=fxRateStatus==='error'?'（暫定値・取得失敗）':'（暫定値・取得中）';
+    }else if(fxRateOrigin==='cached'){
+      label=fxRateStatus==='error'
+        ?`（保存レート ${fxRateDate}・更新失敗）`
+        :`（保存レート ${fxRateDate}・更新確認中）`;
+    }else{
+      label=fxRateStatus==='error'
+        ?`（参考レート ${fxRateDate}・更新失敗）`
+        :`（参考レート ${fxRateDate} 時点）`;
+    }
+    $('fxRateStatus').textContent=label;
+  }
+
+  function validFxRate(text,date){
+    const rate=dec(text);
+    const num=Number(text);
+    return rate&&isPositive(rate)&&Number.isFinite(num)&&num>1&&num<1000&&
+      /^\d{4}-\d{2}-\d{2}$/.test(date);
+  }
+
+  function applyFxRate(text,date,origin,status){
+    fxRate=dec(text);
+    fxRateText=text;
+    fxRateDate=date;
+    fxRateOrigin=origin;
+    fxRateStatus=status;
+    renderFxNote();
+    updateYenDisplays();
+  }
+
+  function restoreFxRate(){
+    try{
+      const cached=JSON.parse(localStorage.getItem(FX_CACHE_KEY)||'null');
+      if(cached&&typeof cached.rate==='string'&&
+         validFxRate(cached.rate,cached.date)){
+        applyFxRate(cached.rate,cached.date,'cached','loading');
+      }
+    }catch(_){}
+  }
+
+  async function refreshFxRate(){
+    if(fxFetching||Date.now()<fxNextFetchAt||document.hidden) return;
+    fxFetching=true;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),9000);
+    try{
+      const response=await fetch('https://api.frankfurter.dev/v2/rate/USD/JPY',{
+        signal:controller.signal,
+        cache:'no-store'
+      });
+      if(!response.ok) throw new Error(`FX API HTTP ${response.status}`);
+      const data=await response.json();
+      const rateText=String(data.rate);
+      if(data.base!=='USD'||data.quote!=='JPY'||
+         !validFxRate(rateText,data.date)){
+        throw new Error('Invalid USD/JPY reference rate');
+      }
+      applyFxRate(rateText,data.date,'live','ready');
+      try{
+        localStorage.setItem(FX_CACHE_KEY,JSON.stringify({
+          rate:rateText,date:data.date,savedAt:Date.now()
+        }));
+      }catch(_){}
+      fxNextFetchAt=Date.now()+60*60*1000; // Refresh at most hourly.
+    }catch(_){
+      fxRateStatus='error';
+      renderFxNote();
+      fxNextFetchAt=Date.now()+5*60*1000;
+    }finally{
+      clearTimeout(timeout);
+      fxFetching=false;
+    }
+  }
+
+  function initFxRate(){
+    restoreFxRate();
+    renderFxNote();
+    refreshFxRate();
+    setInterval(refreshFxRate,5*60*1000);
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden) refreshFxRate();
+    });
   }
 
   function calc(){
@@ -578,6 +686,7 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
   document.querySelectorAll('[data-lev]').forEach(b=>b.classList.toggle('on',Number(b.dataset.lev)===Number(e.levInput.value)));
   updateMarginHint();
   clearResults();
+  initFxRate();
 })();
 </script>
 
